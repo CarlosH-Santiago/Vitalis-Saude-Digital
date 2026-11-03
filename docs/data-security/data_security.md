@@ -1,4 +1,4 @@
-# 🔒 Entrega 6: Segurança de Dados — Classificação, Criptografia e Gestão de Segredos
+# Entrega 6 - Segurança de Dados: Classificação, Criptografia e Gestão de Segredos
 
 **Responsável:** Emerson Lucas Sacramento Lima — DPO / Segurança de Dados  
 **Escopo:** Classificação das informações, criptografia em trânsito/repouso e gestão de segredos (Secrets Management).
