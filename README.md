@@ -2,6 +2,10 @@
 
 > Trabalho acadêmico da disciplina de Gestão de Dados focado no planejamento estratégico de uma organização e na governança de seu ecossistema de software e dados.
 
+## Atividade 3 - Segurança de dados
+
+A [Entrega 6: controle de acesso, autenticação e auditoria](docs/02_data_security.md) reúne as seções 6.B, 6.C e 6.E, de responsabilidade de Gustavo Bezerra Nonato. O documento apresenta a matriz de permissões, a política de MFA, a preservação dos logs e os critérios de aceite para implementação.
+
 ---
 
 ## 👥 Equipe e Divisão de Responsabilidades
