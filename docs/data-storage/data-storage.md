@@ -107,3 +107,182 @@ A duplicidade é tratada em camadas complementares:
 | **Aplicação/ETL**  | Normalização de CPF (somente dígitos), _trim_, padronização de caixa e _upsert_                 | Reduz duplicidade por variação de preenchimento antes de chegar ao banco  |
 
 Além das restrições, o próprio modelo já separa responsabilidades — dados cadastrais em `PACIENTE` e dados clínicos em `PRONTUARIO` — o que evita redundância e mantém uma única fonte de verdade para cada informação. O pipeline de ETL usa a chave natural `id_consulta_origem` para garantir que cada consulta gere apenas uma linha no fato analítico.
+
+----
+
+# Backup, Recuperação & OLTP vs OLAP
+_Responsável: Joalisson Pinto Maia_
+
+## C. Backup e Recuperação
+
+### C.1 Mecanismos e Armazenamento dos Backups
+
+Os backups da infraestrutura são segmentados conforme a natureza técnica e o nível de estruturação dos dados armazenados na plataforma:
+
+**1. Banco Relacional Operacional (Amazon RDS PostgreSQL)**
+- **Point-in-Time Recovery (PITR):** O Amazon RDS executa a captura contínua e o arquivamento automático dos _Write-Ahead Logs_ (WAL) diretamente em um bucket S3 interno gerenciado pela AWS a cada 5 minutos. Isso permite restaurar a base de dados para qualquer segundo específico dentro da janela de retenção configurada.
+- **Automated Daily Snapshots:** Cópia completa da instância de banco de dados executada diariamente durante a janela de menor tráfego de atendimento (02:00 BRT).
+- **Manual Milestones Snapshots:** Snapshots manuais gerados obrigatoriamente antes de cada deploy de grandes atualizações de sistema ou alterações de schema no banco de dados.
+
+**2. Armazenamento de Objetos (Amazon S3)**
+- **S3 Versioning:** O versionamento é ativado em todos os buckets de mídia (`vitalis-prod-exames`, `vitalis-prod-laudos`, `vitalis-prod-gravacoes`). Qualquer alteração ou exclusão cria uma nova versão da chave, preservando o arquivo original intacto contra exclusões acidentais ou ataques de _ransomware_.
+- **Cross-Region Replication (CRR):** Replicação assíncrona automatizada de todos os arquivos de laudos, exames e receitas médicas do bucket principal em São Paulo (`sa-east-1`) para um bucket secundário de contingência na região de N. Virginia (`us-east-1`).
+
+**3. Data Warehouse Analítico (Amazon Redshift)**
+- **Automated Redshift Snapshots:** O cluster armazena snapshots incrementais a cada 8 horas ou a cada 5 GB de dados alterados, além da replicação assíncrona automática desses snapshots para a região secundária (`us-east-1`).
+
+**4. Dados Temporários (Amazon ElastiCache for Redis)**
+- Por armazenar apenas dados voláteis (sessões de teleconsulta, tokens JWT e caches), o Redis não possui rotina de backup persistente de longo prazo. Em caso de falha completa do cluster, a infraestrutura é reconstruída vazia via código (_Terraform_), e a aplicação invalida as sessões, exigindo novo login dos usuários.
+
+### C.2 Frequência, Localização e Matriz de Retenção
+
+A retenção das cópias de segurança é regida por uma política rigorosa que equilibra o custo de armazenamento na nuvem com a conformidade regulatória:
+
+| Componente | Frequência | Localização Primária | Localização Secundária (DR) | Tempo de Retenção |
+| :--- | :--- | :--- | :--- | :--- |
+| **RDS Logs WAL (PITR)** | Contínuo (5 em 5 min) | AWS `sa-east-1` (S3 AWS) | N/A | 35 Dias |
+| **RDS Snapshots Diários** | Diário (02:00 BRT) | AWS `sa-east-1` (RDS) | AWS `us-east-1` | 30 Dias |
+| **RDS Snapshots Mensais** | 1º dia do mês | AWS `sa-east-1` (RDS) | AWS `us-east-1` | 12 Meses |
+| **Documentos/Exames (S3)** | Tempo Real (Versioning) | AWS `sa-east-1` (S3 Standard) | AWS `us-east-1` (S3 CRR) | **20 Anos** (via S3 Lifecycle / Glacier) |
+| **Logs de Acesso (Auditoria)** | Diário (Exportação PostgreSQL) | AWS `sa-east-1` (S3 Standard) | AWS `us-east-1` (S3 CRR) | **6 Meses** (Marco Civil da Internet) |
+| **Redshift Snapshots** | A cada 8 Horas | AWS `sa-east-1` (Redshift) | AWS `us-east-1` | 30 Dias |
+
+### C.3 Plano de Recuperação de Desastres e SLAs (RPO e RTO)
+
+Em cenários de degradação grave, corrupção de dados ou indisponibilidade total de uma zona de disponibilidade ou região da AWS, os procedimentos de restauração são acionados com base nos seguintes parâmetros operacionais:
+
+> **SLA DE RECUPERAÇÃO OPERACIONAL**
+> - **RPO (Recovery Point Objective):** $< 5$ Minutos _(Perda máxima tolerada de dados em caso de falha grave)_
+> - **RTO (Recovery Time Objective):** $< 1$ Hora _(Tempo máximo para restabelecer os serviços vitais)_
+
+#### Fluxo de Procedimentos por Cenário de Falha
+
+```mermaid
+flowchart TD
+    A[Identificação de Falha / Incidente] --> B{Tipo de Incidente}
+    
+    B -->|Queda da Instância Primária RDS| C[Failover Automático Multi-AZ]
+    C --> D[Instância Standby assume em < 60s]
+    D --> E[Operação Normalizada sem Perda de Dados]
+    
+    B -->|Corrupção de Dados / Erro Humano| F[Restauração Point-In-Time PITR]
+    F --> G[Spin-up de nova instância RDS até o minuto anterior ao erro]
+    G --> H[Redirecionamento do tráfego via RDS Proxy]
+    
+    B -->|Queda Total da Região sa-east-1| I[Acionamento do Plano de Disaster Recovery]
+    I --> J[Promover Réplica S3 us-east-1 para Primária]
+    J --> K[Restaurar Snapshots RDS/Redshift em us-east-1 via Terraform]
+    K --> L[Atualização do DNS via Amazon Route 53 Failover Routing]
+```
+
+- **1. Falha de Hardware na Instância Principal do RDS:**
+  - **Ação:** O mecanismo nativo Multi-AZ detecta a perda de conectividade e realiza o _failover_ automático para a instância _Standby_ na segunda Zona de Disponibilidade.
+  - **Tempo estimado:** 30 a 60 segundos.
+  - **Perda de dados (RPO):** 0 segundos.
+
+- **2. Corrupção Lógica ou Exclusão Indevida de Dados Clínicos:**
+  - **Ação:** O DBA/Engenheiro de Dados inicia a restauração PITR criando uma nova instância RDS a partir dos logs de transação (WAL), apontando exatamente para o minuto/segundo imediatamente anterior ao incidente.
+  - **Tempo estimado:** 30 a 45 minutos.
+  - **Perda de dados (RPO):** $< 5$ minutos.
+
+- **3. Desastre Geográfico na Região São Paulo (`sa-east-1`):**
+  - **Ação:** A equipe de infraestrutura executa os scripts de provisionamento automatizado (_Terraform_) na região de N. Virginia (`us-east-1`), promovendo o bucket S3 réplica e restaurando o último snapshot cross-region do RDS. O Amazon Route 53 altera a rota DNS da API para o novo endpoint.
+  - **Tempo estimado:** 45 a 55 minutos.
+  - **Perda de dados (RPO):** $< 5$ minutos.
+
+## D. Transacional (OLTP) vs. Analítico (OLAP)
+
+A arquitetura de dados da Vitalis Saúde Digital adota a abordagem **HTAP isolada (_Hybrid Transactional/Analytical Processing_)**, separando rigorosamente o ambiente operacional de alta velocidade e integridade (OLTP) do ambiente de inteligência de negócios e análise de grandes volumes (OLAP).
+
+```
+ ┌────────────────────────────────────────────────────────┐
+ │            Aplicações Web / Mobile / PEP               │
+ └──────────────────────────┬─────────────────────────────┘
+                            │ (Leitura / Escrita em Tempo Real)
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │           CAMADA OPERACIONAL (OLTP - PostgreSQL)       │
+ │   - Normalização em 3FN (ACID)                         │
+ │   - Baixa Latência / Alta Concorrência                 │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            │ ETL / CDC Noturno (AWS Glue / Debezium)
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │          CAMADA ANALÍTICA (OLAP - Amazon Redshift)     │
+ │   - Esquema Estrela (Fatos e Dimensões)                │
+ │   - Armazenamento Colunar / Agregações Massivas        │
+ └──────────────────────────┬─────────────────────────────┘
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │         Dashboards Executivos / BI (Power BI / Metabase)│
+ └────────────────────────────────────────────────────────┘
+```
+
+### D.1 Separação de Dados Operacionais e Analíticos
+
+| Critério de Separação | Ambiente Operacional (OLTP) | Ambiente Analítico (OLAP) |
+| :--- | :--- | :--- |
+| **Tecnologia Adotada** | **Amazon RDS PostgreSQL 16** | **Amazon Redshift (RA3 Cluster)** |
+| **Tecnologia Auxiliar** | **Amazon ElastiCache for Redis** | **AWS Glue (Pipeline ETL)** |
+| **Modelagem de Dados** | Relacional Normalizado (**3FN**) | Dimensional (**Esquema Estrela / Star Schema**) |
+| **Formato de Guarda** | Base baseada em Linhas (_Row-oriented_) | Armazenamento Colunar (_Column-oriented_) |
+| **Dados Permanentes** | `PACIENTE`, `MEDICO`, `CONSULTA`, `PRONTUARIO`, `PRESCRICAO`, `TRANSACAO_PAGAMENTO`, `LOG_ACESSO` | `FATO_ATENDIMENTO_ANALITICO`, `DIM_PACIENTE`, `DIM_MEDICO`, `DIM_PLANO_SAUDE`, `DIM_TEMPO` |
+| **Volume de Leitura/Escrita** | Milhares de operações por segundo com poucos registros por consulta | Consultas complexas que leem milhões de linhas para gerar poucos indicadores |
+| **Nível de Anonimização** | Dados identificados (CPF, Nome, CRM) protegidos por RBAC e criptografia | Dados identificáveis mascarados ou pseudonimizados com Hashes |
+
+### D.2 Atendimento às Necessidades Transacionais (OLTP)
+
+O ambiente transacional é o "coração" operacional da plataforma **VitalisConnect**. Suas características foram projetadas para priorizar integridade, velocidade e confiabilidade no atendimento médico:
+
+- **1. Garantia de Propriedades ACID**
+  - **Atomicidade & Consistência:** A confirmação de uma teleconsulta exige que o agendamento, o bloqueio do horário do médico e a geração da transação financeira ocorram juntos. Se qualquer etapa falhar, toda a transação sofre _rollback_.
+  - **Isolamento:** Abertura de prontuário e escrita de anamnese ocorrem em nível de isolamento _Read Committed_, impedindo leituras sujas (_dirty reads_) durante o atendimento.
+  - **Durabilidade:** Commits finalizados são gravados de forma síncrona no disco EBS da instância RDS e replicados para a zona _Standby_.
+
+- **2. Alta Concorrência e Baixa Latência**
+  - A aplicação realiza gravações e leituras pontuais rápidas (geralmente por Chave Primária `id` ou índices `CPF`/`CRM`).
+  - Utilização do **RDS Proxy / PgBouncer** para reaproveitamento e _pooling_ eficiente de conexões com o PostgreSQL, prevenindo o esgotamento de conexões durante picos de acessos no aplicativo.
+  - Uso do **Redis** para responder a consultas de alta frequência e baixa variação (como listagem de horários livres por médico e validação de tokens JWT), reduzindo a carga de leitura no PostgreSQL para menos de 10%.
+
+### D.3 Atendimento às Necessidades Analíticas (OLAP)
+
+O ambiente analítico é isolado do banco de dados operacional para garantir que relatórios gerenciais complexos não consumam CPU e memória do sistema de saúde:
+
+- **1. Desempenho em Consultas de Grande Volume**
+  - O **Amazon Redshift** utiliza armazenamento colunar. Consultas do tipo _"Qual foi o tempo médio de consulta por especialidade médica nos últimos 12 meses?"_ leem apenas as colunas específicas envolvidas no cálculo (`especialidade`, `duracao_minutos`), ignorando colunas pesadas como textos de anamnese ou dados cadastrais.
+  - Compressão nativa de dados que reduz a ocupação em disco e acelera a varredura I/O no banco.
+
+- **2. Suporte à Tomada de Decisão Estratégica**
+  - O Data Warehouse consolida dados de múltiplos domínios para responder a perguntas estratégicas da diretoria da Vitalis:
+    - Taxa de ociosidade das agendas médicas por região;
+    - _Churn rate_ (cancelamento) de clínicas clientes SaaS;
+    - Tempo médio entre a emissão e o aviamento de prescrições médicas;
+    - Custos de infraestrutura por atendimento realizado.
+
+### D.4 Fluxo de Sincronização e Carga de Dados (ETL/ELT)
+
+A transferência de dados do ambiente OLTP (PostgreSQL) para o ambiente OLAP (Redshift) ocorre de maneira automatizada e não intrusiva:
+
+```
+┌────────────────────────┐
+│ PostgreSQL Operacional │
+└───────────┬────────────┘
+            │ 1. Extração Diária Noturna (01:00 BRT) / Incremental via CDC
+            ▼
+┌────────────────────────┐
+│  AWS Glue (Job ETL)    │ ──> 2. Executa Limpeza, Anonimização (LGPD) e Enriquecimento
+└───────────┬────────────┘
+            │ 3. Carga no Data Warehouse em Esquema Estrela
+            ▼
+┌────────────────────────┐
+│    Amazon Redshift     │ ──> 4. Alimentação dos Dashboards de BI
+└────────────────────────┘
+```
+
+- **1. Frequência de Sincronização:** Carga em lote (_batch_) executada diariamente no período noturno (01:00 BRT). Em tabelas de alta rotatividade, utiliza-se _Change Data Capture (CDC)_ leve para capturar apenas registros criados ou alterados no último ciclo (`updated_at >= NOW() - INTERVAL '24 HOURS'`).
+- **2. Transformações Aplicadas (ETL):**
+  - **Anonimização (LGPD):** O CPF e o nome do paciente são substituídos por um Hash SHA-256 irreversível (`id_paciente_anonimizado`) antes da gravação no Redshift, garantindo a privacidade dos dados de saúde para fins estatísticos.
+  - **Enriquecimento:** Junção dos dados das tabelas de transação com a dimensão `DIM_TEMPO` para facilitar agrupamentos por dia da semana, mês, trimestre e ano.
+  - **De-duplicação:** Uso da chave natural `id_consulta_origem` no fato `FATO_ATENDIMENTO_ANALITICO` para evitar a inserção duplicada do mesmo atendimento em re-execuções do pipeline.
