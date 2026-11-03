@@ -1,6 +1,6 @@
 # Entrega 6 - Segurança de Dados: Classificação, Criptografia e Gestão de Segredos
 
-**Responsável:** Emerson Lucas Sacramento Lima — DPO / Segurança de Dados  
+**Responsável:** Gustavo Bezerra Nonato— DPO / Segurança de Dados  
 **Escopo:** Classificação das informações, criptografia em trânsito/repouso e gestão de segredos (Secrets Management).
 
 A partir do mapeamento de persistência poliglota definido por Hudnei Sued (composto por PostgreSQL, Redis, Amazon S3 e Amazon Redshift), esta seção estabelece as diretrizes de proteção e privacidade de dados exigidas pela LGPD (Lei nº 13.709/2018) e regulamentações de saúde.
