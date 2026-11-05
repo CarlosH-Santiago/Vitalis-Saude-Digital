@@ -1,25 +1,39 @@
-A plataforma do Vitalis Saúde Digital é formada por 4 partes:
+# Integração entre os Sistemas
 
-1. App Paciente → a tela onde o paciente vai conseguir fazer o agendamento da consulta dele.
-2. Back-end → onde ocorre o sistema para gerenciar os dados clínicos, histórico médico, controle de agendamento e relatórios.
-3. Gateaway de pagamento → para os usuários realizarem o pagamento das consultas.
-4. Prescrição ICP-Brasil → Serviço de assinatura que valida os documentos médicos ( receitas, atestados e etc ) com o padrão PKI-Brasil.
+A plataforma Vitalis Saúde Digital é composta por cinco partes principais:
 
----
+1. Aplicativo do paciente: interface utilizada pelo paciente para
+   consultar horários disponíveis, agendar consultas e acompanhar seus
+   atendimentos.
+2. Back-end: responsável pelas regras de negócio, gerenciamento dos
+   pacientes, médicos, agendamentos e informações clínicas. Também
+   realiza a comunicação com os demais serviços.
+3. Gateway de pagamento: responsável por processar os pagamentos
+   das consultas e informar ao sistema quando uma transação é aprovada
+   ou recusada.
+4. Serviço de assinatura digital ICP-Brasil: utilizado para assinar
+   e validar documentos médicos, como receitas e atestados, garantindo
+   sua autenticidade.
+5. Integração com convênios médicos: responsável por consultar a
+   situação do plano de saúde, verificar a cobertura da consulta e
+   solicitar autorização à operadora quando necessário.
 
-Formato dos dados
+O sistema utilizará o Amazon RDS com PostgreSQL para armazenar os dados
+da aplicação e o Amazon S3 para armazenar documentos e exames.
 
-Toda a comunicação síncrona e assíncrona foi decidido que vamos usar o formato JSON para a comunicação entre os sistemas. 
+## Formato dos dados
 
-Exemplo 1 de Payload de integração com o gateaway:
+Para a comunicação entre os sistemas, será utilizado o formato JSON,
+tanto nas requisições das APIs quanto nas mensagens de eventos.
 
+Exemplo 1 -- Notificação de pagamento aprovado pelo gateway:
 {
   "event": "payment.succeeded",
   "timestamp": "2026-11-03T14:30:00Z",
   "data": {
     "transaction_id": "tx_9876543210",
     "appointment_id": "apt_1029384756",
-    "patient_id": "pat_550e8400-e29b-41d4-a716-446655440000",
+    "patient_id": "pat_550e8400",
     "amount": 15000,
     "currency": "BRL",
     "status": "paid",
@@ -27,21 +41,17 @@ Exemplo 1 de Payload de integração com o gateaway:
   }
 }
 
-Exemplo 2 de envio do payload do módulo de ICP-Brasil:
+Exemplo 2 -- Envio de uma receita para assinatura digital:
 
 {
   "prescription_id": "presc_4455667788",
   "appointment_id": "apt_1029384756",
   "doctor": {
     "id": "doc_11223344",
-    "name": "Dr. Carlos Eduardo",
-    "crm": "123456/SP",
-    "cpf": "123.456.789-00"
+    "crm": "123456/SP"
   },
   "patient": {
-    "id": "pat_550e8400-e29b-41d4-a716-446655440000",
-    "name": "Maria Silva",
-    "cpf": "987.654.321-11"
+    "id": "pat_550e8400"
   },
   "medications": [
     {
@@ -53,30 +63,67 @@ Exemplo 2 de envio do payload do módulo de ICP-Brasil:
   "certificate_type": "ICP_BRASIL_A3"
 }
 
-Os mecanismos de comunicação que optamos foi através de API's REST e Web Hooks. API's REST para interação em tempo real dos usuários e os médicos, além dos Web Hook que vamos utilizar para notificação de eventos externos onde o tempo de resposta do serviço de origem não deve bloquear a experiência do usuário.
+Os dados pessoais e clínicos utilizados nesses exemplos são ilustrativos. Na comunicação real, somente as informações necessárias para cada operação serão compartilhadas.
 
----
+## Mecanismos de comunicação
 
-Tratamento de falhas
+A comunicação entre o aplicativo e o back-end será realizada por meio de APIs REST, permitindo operações como cadastro de pacientes, consulta de horários e agendamento de consultas.
 
-Vamos adotar os seguintes métodos para evitar falhas:
+Para situações que não precisam de resposta imediata, serão utilizados processos assíncronos. O Amazon SQS será responsável por organizar as mensagens e permitir que o back-end processe eventos sem depender de uma resposta imediata de outros serviços.
 
-Timeout Estritos → Configuração de tempo limite de resposta ( Ex: 5s pra gateaway e 8s pra serviço )
+Os Webhooks serão utilizados para receber notificações de serviços externos, como a confirmação de um pagamento pelo gateway. Dessa forma, o sistema poderá atualizar o status da consulta sem precisar consultar o gateway repetidamente.
 
-Padrão Circuit Breaker → Monitoramento da taxa de erro de API's externas. Caso o Gateaway apresenta erros, o circuito é "aberto", interrompendo chamadas temporárias e retornando retornos controlados em vez de congelar a requisição do usuário
+A integração com as operadoras de convênios também será realizada por meio das interfaces disponibilizadas por cada empresa. Quando houver APIs REST disponíveis, elas serão utilizadas para consultar a elegibilidade do paciente, verificar a cobertura e solicitar autorizações. Como cada operadora pode ter um padrão próprio de integração, o back-end será responsável por adaptar as informações trocadas.
 
-Retentativas com Exponential Backoff → Webhooks recebidos com falha ou chamadas assíncronas interrompidas são reprocessados em intervalos progressivamente maiores ( ex.: 2s, 4s, 8s, 16s, até um máximo de 5 tentativas )
+## Integração com convênios médicos
 
-Dead Letter Queues → Mensagens de integração que falharem após todas as tentativas automáticas de retentativa são direcionadas para uma fila DLQ no serviço de mensageria para análise
+A plataforma permitirá que pacientes utilizem seus planos de saúde para realizar consultas. Para isso, o back-end consultará os serviços disponibilizados pelas operadoras e verificará se o plano está ativo, se o paciente tem direito ao atendimento e se a consulta está coberta.
 
----
+O fluxo funcionará da seguinte maneira:
 
-Regras de Consistência e Prevenção de Duplicidade
+1. O paciente informa os dados do convênio no aplicativo.
+2. O back-end consulta a operadora para verificar a situação do plano e
+   a elegibilidade do paciente.
+3. O sistema verifica se a consulta está coberta pelo plano.
+4. Quando necessário, o back-end envia uma solicitação de autorização à
+   operadora.
+5. Após receber a resposta, o sistema atualiza o status do agendamento
+   e informa o paciente.
+6. Caso o atendimento não seja coberto ou a autorização seja negada, o
+   paciente será informado e poderá verificar outras formas de
+   pagamento.
 
-Para evitar erros como cobranças duplicadas ou emissão, vamos seguir esses pontos:
+Serão armazenadas as informações necessárias para identificar o convênio, o plano, o número de autorização (quando houver) e o status da solicitação. Esses dados ficarão vinculados ao paciente e ao agendamento correspondente.
 
-Idempotência de requisições → Todas as chamadas mutacionais de pagamento ou de agendamento vão precisar de um cabeçalho HTTP exclusivo contendo o UUID. exemplo: Se uma requisição der problema por questão de instabilidade na rede, vai poder retomar sem reprocessar a cobrança.
+Tratamento de falhas: caso a operadora esteja indisponível, o sistema não deverá considerar a consulta autorizada. A solicitação poderá ser realizada novamente, e o paciente será informado de que a validação está pendente.
 
-Transação compensatória → Como envolve muitos sistemas e dentro de um processo pode envolver uma ação de cada um, caso falhe em algum ponto deve ter algo pra compensar. exemplo: ( se der cobrança mas falhar no agendamento, deve ter um estorno para compensar )
+Prevenção de duplicidade: cada solicitação de autorização deverá possuir um identificador próprio, permitindo reconhecer tentativas repetidas e evitar solicitações duplicadas à operadora.
 
-Restrições de Unicidade e Trava Operacional → Campos críticos no banco de dados (como transaction_id, signature_hash e appointment_id) possuem restrições únicas (UNIQUE INDEX), impedindo persistências duplicadas em concorrência de requisições
+## Tratamento de falhas
+
+Para evitar que problemas em serviços externos prejudiquem o funcionamento da plataforma, serão adotadas algumas medidas:
+
+Timeout: as requisições terão um tempo máximo de espera. Inicialmente, será utilizado um limite de 5 segundos para o gateway de pagamento e 8 segundos para o serviço de assinatura digital. Esses valores poderão ser ajustados conforme os testes de desempenho.
+
+Circuit Breaker: caso um serviço externo apresente muitas falhas consecutivas, o sistema interromperá temporariamente as chamadas para ele. Isso evita que uma instabilidade externa prejudique as demais
+operações da plataforma.
+
+Retentativas (Retry): quando ocorrer uma falha temporária, o sistema poderá tentar realizar a operação novamente, aumentando o intervalo entre as tentativas (2, 4, 8 e 16 segundos), com limite de cinco tentativas. Esse mecanismo será aplicado somente às operações que podem ser repetidas com segurança.
+
+Dead Letter Queue (DLQ): mensagens que não forem processadas mesmo após as tentativas serão encaminhadas para uma fila separada no Amazon SQS. Assim, poderão ser analisadas e processadas novamente quando o problema for resolvido.
+
+## Consistência dos dados e prevenção de duplicidade
+
+Como a plataforma trabalha com pagamentos, agendamentos, documentos médicos e autorizações de convênios, é importante evitar que uma mesma operação seja executada mais de uma vez.
+
+Para isso, serão utilizadas as seguintes medidas:
+
+Idempotência: as requisições de pagamento e agendamento utilizarão uma chave única, enviada pelo cabeçalho HTTP Idempotency-Key. Caso o usuário tente repetir uma operação por causa de uma falha na conexão, o sistema reconhecerá a chave e evitará executar a mesma operação novamente.
+
+Transações compensatórias: quando uma operação envolver mais de um serviço, o sistema deverá prever como corrigir possíveis falhas. Por exemplo, se o pagamento for aprovado, mas o agendamento não for
+concluído, o sistema deverá solicitar o cancelamento ou estorno do pagamento. No caso de convênios, se uma autorização for obtida, mas o atendimento não acontecer, o sistema deverá seguir as regras da
+operadora para cancelar ou encerrar a autorização, quando aplicável.
+
+Restrições de unicidade: o banco de dados utilizará restrições UNIQUE para impedir registros duplicados em campos que exigem identificação única, como o identificador da transação e o hash da assinatura digital. Para os agendamentos, também serão aplicadas regras para impedir que dois pacientes ocupem o mesmo horário com o mesmo médico. As solicitações de autorização de convênio também terão identificadores próprios para permitir seu controle.
+
+Essas medidas ajudam a manter os dados consistentes, mesmo quando ocorrem falhas de comunicação ou várias requisições são realizadas ao mesmo tempo.
