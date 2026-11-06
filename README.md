@@ -1,10 +1,6 @@
-# 🏢 Projeto Integrador: Gestão de Dados e Estrutura Organizacional
-
-> Trabalho acadêmico da disciplina de Gestão de Dados focado no planejamento estratégico de uma organização e na governança de seu ecossistema de software e dados.
-
-## Atividade 3 - Segurança de dados
-
-A [Entrega 6: controle de acesso, autenticação e auditoria](docs/02_data_security.md) reúne as seções 6.B, 6.C e 6.E, de responsabilidade de Gustavo Bezerra Nonato. O documento apresenta a matriz de permissões, a política de MFA, a preservação dos logs e os critérios de aceite para implementação.
+# Vitalis Saúde Digital
+## Introdução
+#### A Vitalis Saúde Digital é uma empresa de HealthTech que desenvolve software para o setor médico, com foco em telemedicina, Prontuário Eletrônico do Paciente (PEP) e emissão de prescrições digitais assinadas com certificado ICP-Brasil. Seu principal produto é o VitalisConnect, plataforma em nuvem que conecta pacientes e profissionais de saúde em um único ambiente, reunindo teleconsultas, agendamento, gestão de pacientes e profissionais, armazenamento de documentos clínicos e relatórios de apoio à gestão.
 
 ---
 
@@ -20,13 +16,9 @@ A [Entrega 6: controle de acesso, autenticação e auditoria](docs/02_data_secur
 | **Emerson Lucas Sacramento** | DPO (Encarregado LGPD / Segurança) | Proteção de Dados Sensíveis e Criptografia |
 | **Mateus Queiroz** | Analista de Governança e Riscos | Análise de Riscos de Dados e Valor de Negócio |
 
-# PARTE 1: MODELAGEM DA EMPRESA
+----
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 1                                    -->
-<!-- ======================================================== -->
 ### 1.1 Identidade Institucional
-*Responsável: Carlos Henrique De Souza Santana Santiago*
 
 #### 1.1.1 Nome da Empresa e Marca
 * **Nome Fantasia:** Vitalis Saúde Digital
@@ -52,12 +44,7 @@ A [Entrega 6: controle de acesso, autenticação e auditoria](docs/02_data_secur
 
 ---
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 2                                    -->
-<!-- ======================================================== -->
 ## 1.2 Mercado, Oferta e Ecossistema
-
-Responsável: João Guilherme Pinheiro
 
 ### 1.2.1 Produtos e Serviços
 
@@ -117,11 +104,7 @@ Assim, o ecossistema da empresa é formado pela integração entre Vitalis, prof
 
 ---
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 3                                    -->
-<!-- ======================================================== -->
 ## 1.3 Estrutura Organizacional e Estratégia
-*Responsável: Gustavo Bezerra Nonato*
 
 ### 1.3.1 Organograma
 
@@ -145,15 +128,9 @@ graph TD
 
 ---
 
-# PARTE 2: PROJETO DE SOFTWARE E GESTÃO DE DADOS
-
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 4                                    -->
-<!-- ======================================================== -->
 ## 2.1 Visão Geral do Software e Ciclo de Dados
-*Responsável: Hudnei Sued Santana*
 
-### 2.1.1 Descrição do Sistema / Produto de Software
+### 2.1.1 Descrição do Sistema 
 * O VitalisConnect é a plataforma digital de saúde da Vitalis Saúde Digital, responsável por conectar pacientes e profissionais de saúde por meio de teleconsultas, gerenciamento do Prontuário Eletrônico do Paciente (PEP) e emissão de prescrições médicas digitais assinadas com certificado digital.
 
 ### 2.1.2 Dados Produzidos e Utilizados
@@ -215,30 +192,24 @@ Como saídas, o sistema disponibiliza o prontuário eletrônico, informações d
 
 ---
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 5                                    -->
-<!-- ======================================================== -->
 
 ## 2.2 Arquitetura de Armazenamento
-*Responsável: Joalisson Pinto Maia*
 
 ### 2.2.1 Onde os Dados são Armazenados
 Como a Vitalis trabalha com diferentes tipos de dados, cada informação será armazenada na tecnologia mais adequada para sua necessidade.
 
-- **PostgreSQL:** usado para dados estruturados, como prontuários, consultas, prescrições, usuários, agendamentos e transações.
-- **MongoDB / DynamoDB:** usado para logs, auditoria, sessões de telemedicina e dados gerados por dispositivos *wearables*.
-- **Cloudflare R2 / AWS S3:** usado para arquivos maiores e não estruturados, como exames, laudos, PDFs, imagens médicas e gravações de teleconsultas.
-- **Redis:** usado para informações temporárias que precisam de acesso rápido, como sessões, tokens e horários disponíveis.
+- **PostgreSQL (RDS):** usado para dados estruturados, como prontuários, consultas, prescrições, usuários, agendamentos e transações.
+- **DynamoDB:** usado para logs, auditoria, sessões de telemedicina e dados gerados por dispositivos *wearables*.
+- **AWS S3:** usado para arquivos maiores e não estruturados, como exames, laudos, PDFs, imagens médicas e gravações de teleconsultas.
+- **ElasticCahce for Redis:** usado para informações temporárias que precisam de acesso rápido, como sessões, tokens e horários disponíveis.
 Dessa forma, evitamos concentrar todos os tipos de dados em apenas uma tecnologia.
 
 ---
 
 ### 2.2.2 Infraestrutura de Nuvem
-A infraestrutura principal da Vitalis será baseada na **AWS**, utilizando a região de São Paulo (**sa-east-1**), com serviços complementares podendo utilizar outras plataformas, como o **Cloudflare R2** para armazenamento de arquivos.
+A infraestrutura principal da Vitalis será baseada na **AWS**, utilizando a região de São Paulo (**sa-east-1**), com serviços complementares podendo utilizar outras plataformas, como a **AWS S3** para armazenamento de arquivos.
 
 O PostgreSQL será utilizado por meio do **Amazon RDS**, com configuração **Multi-AZ**, permitindo que outra instância assuma o serviço caso aconteça alguma falha.
-
-Também poderão ser utilizados **Auto Scaling** e **Application Load Balancer (ALB)** para distribuir os acessos e ajustar os recursos conforme o número de usuários da plataforma.
 
 ---
 
@@ -270,11 +241,7 @@ Por isso, os arquivos armazenados no **Cloudflare R2** ou **Amazon S3** poderão
 Assim, a Vitalis consegue manter os dados pelo período necessário, buscando reduzir os custos de armazenamento sem comprometer a disponibilidade das informações.
 ---
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 6                                     -->
-<!-- ======================================================== -->
 ## 2.3 Privacidade e Proteção de Dados Sensíveis
-*Responsável: Emerson Lucas Sacramento Lima*
 
 ### 2.3.1 Mapeamento de Dados Sensíveis
 Como os serviços da Vitalis Saúde Digital envolvem consultas e prontuários médicos, o uso de dados pessoais e de saúde faz parte do funcionamento básico da plataforma. A adequação à Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018) busca garantir a segurança das informações e a privacidade dos pacientes e médicos.
@@ -319,12 +286,7 @@ A plataforma disponibiliza interface para atendimento às requisições dos titu
 
 ---
 
-<!-- ======================================================== -->
-<!-- SEÇÃO DO INTEGRANTE 7                                    -->
-<!-- ======================================================== -->
 ## 2.4 Governança, Riscos e Valor de Negócio
-
-**Responsável: Mateus Queiroz**
 
 ### 2.4.1 Problemas Relacionados aos Dados
 
