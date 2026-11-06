@@ -1,4 +1,37 @@
-# Entrega 6 - Segurança de Dados
+# Segurança de Dados
+
+# Classificação, Criptografia e Segredos
+
+A arquitetura da plataforma adota diretrizes de proteção e privacidade alinedas à LGPD (Lei nº 13.709/2018) e às exigências de segurança para dados de saúde.
+
+## 1. Classificação dos Dados
+
+Os dados armazenados no PostgreSQL, Redis, S3 e Redshift são divididos por níveis de sensibilidade para definir o grau de proteção necessário:
+
+| Categoria | Nível | Onde fica | Exemplos | Proteção Aplicada |
+| :--- | :--- | :--- | :--- | :--- |
+| **Público** | Baixo | PostgreSQL / S3 | Termos de uso, catálogo de serviços. | Acesso livre, integridade garantida via HTTPS. |
+| **Interno** | Médio | PostgreSQL / Redis / Redshift | Métricas, logs operacionais, cache de agenda. | Acesso restrito à equipe técnica. |
+| **Pessoal** | Alto | PostgreSQL | Nome, CPF, e-mail, CRM do médico. | Criptografia em repouso e mascaramento. |
+| **Sensível** | Máximo | PostgreSQL / S3 | Prontuários (PEP), prescrições, laudos, exames. | Criptografia forte (AES-256), acesso restrito e retenção legal de 20 anos. |
+
+## 2. Mecanismos de Criptografia
+
+- **Em trânsito:** Todo o tráfego entre os clientes (web/mobile) e os servidores utiliza **HTTPS com TLS 1.3**. As chamadas de vídeo da telemedicina utilizam criptografia de ponta a ponta (E2EE) de forma efêmera na memória.
+- **Em repouso:** O banco de dados PostgreSQL e os arquivos armazenados no Amazon S3 utilizam criptografia padrão **AES-256**, garantindo que os dados fiquem ilegíveis caso haja acesso direto aos discos de armazenamento.
+
+## 3. Gestão de Segredos
+
+Para evitar vazamentos de senhas e chaves no repositório de código:
+
+- **Zero Hardcoding:** É estritamente proibido gravar senhas de banco de dados, chaves de API ou tokens diretamente no código-fonte.
+- **Variáveis de Ambiente:** Todas as credenciais sensíveis são injetadas na aplicação em tempo de execução através de **variáveis de ambiente** configuradas de forma segura no servidor, mantendo o código limpo e seguro no GitHub.
+
+## 4. Retenção e Conformidade com a LGPD
+
+- **Dados temporários:** Dados de sessão e cache no Redis possuem tempo de expiração curto (TTL) e são descartados automaticamente.
+- **Prontuários e exames:** Armazenados no PostgreSQL e S3 pelo prazo obrigatório de **20 anos** (Lei nº 13.787/2018). Pedidos de exclusão pela LGPD são atendidos por **anonimização**, preservando a obrigação legal. Documentos físicos digitalizados são armazenados no S3 com criptografia, permitindo o descarte do papel após a verificação de integridade.
+- **Logs de auditoria:** Mantidos por no mínimo 6 meses conforme o Marco Civil da Internet.
 
 ## Controle de acesso, autenticação e auditoria
 
