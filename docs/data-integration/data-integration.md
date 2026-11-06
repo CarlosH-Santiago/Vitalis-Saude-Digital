@@ -5,7 +5,7 @@ A plataforma do Vitalis Saúde Digital é formada por 4 partes:
 3. Gateaway de pagamento → para os usuários realizarem o pagamento das consultas.
 4. Prescrição ICP-Brasil → Serviço de assinatura que valida os documentos médicos ( receitas, atestados e etc ) com o padrão PKI-Brasil.
 
----
+--- 
 
 Formato dos dados
 
