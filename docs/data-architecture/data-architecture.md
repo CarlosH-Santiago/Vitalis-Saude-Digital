@@ -1,114 +1,67 @@
+# Arquitetura de Dados Corporativa
 
-# **Entrega 1 — Data Architecture (Visão Macro)**
-*Responsável: Carlos Henrique De Souza Santana Santiago*
+## 1. Diretrizes de Arquitetura
 
-## **1.A. Sistemas**
-- Qual é o papel principal deste sistema na operação?
-- Quem é o usuário direto dele (médico, paciente, equipe financeira, diretoria)?
-- Ele é um sistema de entrada de dados, de processamento ou de análise?
+A arquitetura da **Vitalis Saúde Digital** sustenta serviços críticos de telemedicina e Prontuário Eletrônico do Paciente (PEP) operando simultaneamente em modelos B2B e B2C. Três decisões técnicas guiam o ecossistema:
 
-* **Aplicativo Mobile/Web do Paciente**
-  * **Papel:** Agendamento de consultas, acesso à sala virtual de telemedicina e consulta de receitas e exames.
-  * **Usuário Direto:** Pacientes (B2C).
-  * **Tipo:** Entrada e consulta de dados.
+* **Baixa latência clínica:** A consulta e a escrita do prontuário exigem tempo de resposta imediato, sem contenção de recursos computacionais.
+* **Conformidade regulatória:** Isolamento de dados clínicos sensíveis (LGPD, Art. 11) e retenção legal obrigatória de 20 anos para prontuários (Lei nº 13.787/2018 e CFM).
+* **Isolamento de cargas:** Segregação estrita entre o processamento transacional de atendimento (OLTP) e o processamento analítico de inteligência de negócios (OLAP).
 
-* **Sistema Administrativo (VitalisConnect)**
-  * **Papel:** Gestão de agendas, preenchimento do Prontuário Eletrônico do Paciente (PEP) e emissão de prescrições.
-  * **Usuário Direto:** Médicos, enfermeiros e recepcionistas (B2B).
-  * **Tipo:** Entrada e processamento operacional.
+---
 
-* **Sistema de Pagamentos (Gateway)**
-  * **Papel:** Processamento de pagamentos de consultas e cobrança das assinaturas das clínicas.
-  * **Usuário Direto:** Pacientes, gestores de clínicas e equipe financeira.
-  * **Tipo:** Processamento transacional financeiro.
+## 2. Ecossistema Tecnológico
 
-* **CRM de Suporte**
-  * **Papel:** Registro e acompanhamento de chamados técnicos e dúvidas operacionais.
-  * **Usuário Direto:** Equipe de atendimento, clínicas parceiras e pacientes.
-  * **Tipo:** Gestão de atendimento.
+Cada tecnologia atende a uma demanda computacional específica, evitando centralização excessiva e gargalos de I/O:
 
-* **Banco Operacional (OLTP - PostgreSQL)**
-  * **Papel:** Armazenamento relacional de dados transacionais com garantia de consistência e baixa latência.
-  * **Usuário Direto:** Serviços de backend da aplicação e administradores de banco de dados.
-  * **Tipo:** Armazenamento transacional (OLTP).
+| Componente | Tecnologia | Papel Prático na Operação |
+| :--- | :--- | :--- |
+| **App do Paciente (B2C)** | Web / Mobile | Autoagendamento, sala de espera virtual e acesso a documentos. |
+| **Portal Médico (B2B)** | Web SaaS | Anamnese, histórico clínico e prescrições com assinatura digital ICP-Brasil. |
+| **Banco Operacional (OLTP)** | PostgreSQL RDS Multi-AZ | Persistência relacional ACID de baixa latência para prontuários, cadastros e agendas. |
+| **Armazenamento de Arquivos** | AWS S3 | Guarda de objetos pesados e estáticos (laudos em PDF e imagens médicas DICOM). |
+| **Cache em Memória** | Redis | Gestão de sessões WebRTC, tokens de autenticação e trava temporária de agenda contra duplo agendamento. |
+| **Servidores de Mídia** | WebRTC dedicado | Streaming de áudio e vídeo da teleconsulta ponto a ponto, sem sobrecarregar a base de dados. |
+| **Integração & Pipeline** | Airflow + CDC (Debezium) | Captura de alterações do banco relacional com sanitização e mascaramento prévio de dados sensíveis. |
+| **Data Warehouse (OLAP)** | Amazon Redshift | Banco colunar com modelagem dimensional (*Star Schema*) para consultas analíticas corporativas. |
+| **Camada de BI** | Metabase / Power BI | Painéis executivos com indicadores de ocupação, faturamento SaaS e tempos médios de consulta. |
 
-* **Data Warehouse (OLAP - Redshift)**
-  * **Papel:** Armazenamento consolidado do histórico operacional para análise de dados e geração de relatórios.
-  * **Usuário Direto:** Engenheiros de dados e analistas de BI.
-  * **Tipo:** Armazenamento e processamento analítico (OLAP).
+---
 
-* **Sistema de BI (Metabase / Power BI)**
-  * **Papel:** Exibição de painéis gerenciais e indicadores de desempenho da operação.
-  * **Usuário Direto:** Diretoria executiva e gestores de clínicas.
-  * **Tipo:** Visualização e análise de dados.
+## 3. Fluxo de Dados
 
-* **Servidor de Mídia (WebRTC)**
-  * **Papel:** Transmissão de áudio e vídeo em tempo real durante as teleconsultas.
-  * **Usuário Direto:** Médicos e pacientes em atendimento.
-  * **Tipo:** Infraestrutura de comunicação em tempo real.
+O dado percorre um ciclo unificado desde a entrada na interface até a camada analítica:
 
-* **Repositório de Arquivos (AWS S3)**
-  * **Papel:** Armazenamento de arquivos pesados, como exames em PDF, laudos e imagens no padrão DICOM.
-  * **Usuário Direto:** Aplicação backend, médicos e pacientes.
-  * **Tipo:** Armazenamento não estruturado (Object Storage).
+```
+[Paciente / Médico] 
+       │ (HTTPS / TLS 1.3)
+       ▼
+[API Gateway / Backend] ──► [Redis] (Controle de sessão e trava de horário)
+       │
+       ├──► [PostgreSQL RDS] (Registros clínicos ACID)
+       └──► [AWS S3] (Armazenamento de PDFs e exames pesados)
+                 │
+                 ▼ (Carga incremental diária via CDC / Airflow)
+       [Amazon Redshift DW]
+                 │
+                 ▼
+       [Dashboards de BI]
+```
 
-## **1.B. Fluxo de Dados**
-*Responsável: João Guilherme Pinheiro (CMO / Diretor Comercial)*
+1. **Ingestão e Agendamento:** O paciente agenda a consulta; a aplicação valida a disponibilidade no Redis e persiste o agendamento no PostgreSQL RDS.
+2. **Atendimento Clínico:** A teleconsulta ocorre via WebRTC. O médico digita anotações clínicas diretamente no prontuário e assina receitas digitais; laudos e exames anexados são enviados ao AWS S3 via URLs pré-assinadas.
+3. **Extração e Tratamento:** Cargas incrementais via Change Data Capture (CDC) extraem alterações da base operacional sem bloqueios de tabela, aplicando anonimização nos dados protegidos pela LGPD.
+4. **Carga e Visualização:** O Amazon Redshift consolida os dados na tabela `Fato_Atendimento` associada a dimensões temporais e médicas, alimentando os relatórios da diretoria sem onerar o atendimento médico.
 
-Na Vitalis, os dados começam a ser gerados quando o paciente usa o aplicativo para marcar uma consulta. Depois, passam pelo atendimento e podem ser usados pela diretoria para acompanhar os resultados da empresa.
+---
 
-A ideia é separar o que usamos na operação do que precisamos analisar. Assim, um relatório pesado não atrapalha o médico durante uma consulta.
+## 4. Resiliência: Modo Offline
 
-O fluxo funciona assim:
+Para evitar interrupção no atendimento médico em caso de queda de conexão na clínica, o Portal VitalisConnect adota arquitetura *Local-First* com sincronização assíncrona:
 
-### 1. Agendamento no aplicativo
-O paciente entra no aplicativo (B2C), escolhe um horário e confirma a consulta. O backend registra o agendamento no banco operacional, chamado OLTP. Nesse momento, o sistema precisa garantir que o mesmo horário não seja reservado por dois pacientes.
+* **Persistência Local:** O rascunho da anamnese e itens da prescrição são gravados em tempo real no banco local do navegador (IndexedDB) com criptografia de sessão.
+* **Fila em Background:** A aplicação gera identificadores globais (`UUIDv4`) para cada transação e retém as ações em fila local gerenciada por um *Service Worker*.
+* **Sincronização Idempotente:** Assim que a conexão HTTPS é restabelecida, o *Service Worker* despacha a fila para a API REST, que utiliza o `UUID` para descartar duplicidades e consolida os registros no PostgreSQL central.
 
-### 2. Atendimento médico
-O médico acessa seu painel (B2B), abre o Prontuário Eletrônico do Paciente (PEP) e inicia a teleconsulta. Durante o atendimento, registra a anamnese e emite a prescrição com assinatura ICP-Brasil. Esses registros ficam no banco operacional, que precisa responder rápido para não atrasar o trabalho.
+---
 
-### 3. Preparação dos dados
-Depois, um processo de integração extrai os dados necessários para análise. Isso pode acontecer de madrugada ou em pequenos lotes ao longo do dia, dependendo da necessidade de atualização.
-
-Nessa etapa, os dados são organizados e tratados. As informações sensíveis precisam de cuidados específicos, como anonimização ou pseudonimização, conforme o uso previsto e os requisitos de proteção de dados.
-
-### 4. Armazenamento para análise
-Os dados preparados seguem para o Data Warehouse da Vitalis. Nesse ambiente, podemos organizar os atendimentos em uma tabela de fatos, como Fato_Atendimento, ligada a dimensões como Dim_Tempo, Dim_Medico e Dim_Clinica. Isso facilita as consultas por período, médico ou clínica.
-
-### 5. Painel da diretoria
-Uma ferramenta de BI usa os dados do Data Warehouse para montar os painéis. A diretoria consegue acompanhar o volume de teleconsultas no mês, as especialidades mais procuradas e o tempo médio de atendimento.
-
-A atualização desses painéis depende da frequência de carga dos dados. Se a carga acontecer só de madrugada, por exemplo, o painel vai mostrar os dados disponíveis até a última atualização.
-
-## **1.C. Transacional vs. Analítico (OLTP e OLAP)**
-*Responsável: João Guilherme Pinheiro (CMO / Diretor Comercial)*
-
-Os dois ambientes têm funções diferentes. O OLTP atende às atividades do dia a dia. Já o OLAP permite analisar o histórico da operação.
-
-### Banco transacional (OLTP)
-
-É o banco usado pelo aplicativo e pelo painel do médico. Ele registra agendamentos, salva informações do prontuário e atende às solicitações que chegam durante o uso do sistema.
-
-O foco é executar operações rápidas, mesmo com várias pessoas usando a plataforma ao mesmo tempo. Cada operação costuma envolver poucos dados, como o agendamento de uma consulta ou a atualização de um prontuário.
-
-As propriedades ACID (Atomicidade, Consistência, Isolamento e Durabilidade) ajudam a manter as transações corretas. Uma gravação deve ser concluída por inteiro ou desfeita, evitando que uma falha deixe parte da informação salva.
-
-### Ambiente analítico (OLAP / Data Warehouse)
-
-Esse ambiente serve para consultar grandes volumes de dados e acompanhar o histórico da Vitalis. Por exemplo, podemos comparar o número de consultas entre meses ou calcular o tempo médio de atendimento por especialidade.
-
-A estrutura é preparada para somas, médias, contagens e cruzamentos de informações. O Data Warehouse reúne os dados usados nessas análises, enquanto o OLAP se refere ao processamento analítico.
-
-Como esse trabalho acontece em um ambiente separado, os relatórios não disputam os mesmos recursos do banco usado no atendimento.
-
-### O que acontece se a diretoria rodar um relatório pesado no banco usado pelo médico?
-
-O atendimento pode ficar mais lento, porque o relatório passa a disputar recursos com as operações do médico.
-
-Imagine que a diretoria queira calcular a média de duração das consultas de todas as clínicas nos últimos cinco anos, agrupada por mês e especialidade. Para gerar esse relatório, o banco pode precisar ler milhões de registros e fazer vários cálculos.
-
-Enquanto isso, o médico está tentando salvar uma evolução no prontuário. Essa gravação é pequena, mas pode demorar se o banco estiver sobrecarregado ou se houver bloqueios entre as consultas. Na prática, o médico pode ficar esperando a tela responder, e a emissão da prescrição também pode atrasar.
-
-O impacto depende da capacidade do banco e de como as consultas são executadas. Mesmo assim, não faz sentido colocar o atendimento nessa disputa.
-
-Por isso, a proposta para a Vitalis é manter os ambientes separados: o OLTP cuida dos agendamentos e dos registros clínicos, e o ambiente analítico fica com os relatórios da diretoria. Assim, conseguimos analisar os resultados sem prejudicar a rotina de atendimento.
