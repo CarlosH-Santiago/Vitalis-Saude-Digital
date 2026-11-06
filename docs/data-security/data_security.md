@@ -241,3 +241,6 @@ A efetividade dos controles deve ser verificada por meio de testes periódicos, 
 
 Os resultados devem ser documentados, com registro das falhas identificadas e das ações corretivas necessárias.
 
+## Diretriz de segurança
+
+A segurança da informação deve fazer parte da operação da Vitalis, desde o acesso aos sistemas até o armazenamento e a análise dos dados. Os controles precisam ser revisados continuamente, garantindo a confidencialidade, a integridade e a disponibilidade das informações, em conformidade com a LGPD.
