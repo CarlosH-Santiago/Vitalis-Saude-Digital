@@ -10,7 +10,7 @@ A plataforma Vitalis Saúde Digital é composta por cinco partes principais:
 
 O armazenamento será feito pelo **Amazon RDS (PostgreSQL)** para dados da aplicação e pelo **Amazon S3** para documentos e exames.
 
-## Formato dos dados
+## 1. Formato dos dados
 
 A comunicação entre os sistemas utilizará JSON, tanto nas requisições das APIs quanto nas mensagens de eventos.
 
@@ -32,7 +32,7 @@ A comunicação entre os sistemas utilizará JSON, tanto nas requisições das A
 
 Os valores e dados apresentados são fictícios. O campo `amount` representa o valor em centavos.
 
-## Mecanismos de comunicação
+## 2. Mecanismos de comunicação
 
 A comunicação entre o aplicativo e o back-end será realizada por **APIs REST**, utilizadas em operações como cadastro, consulta de horários e agendamentos.
 
@@ -40,7 +40,7 @@ Para tarefas que não exigem resposta imediata, será utilizado o **Amazon SQS**
 
 Os **Webhooks** receberão notificações externas, como confirmações de pagamento. A integração com convênios utilizará as interfaces disponibilizadas pelas operadoras, conforme seus padrões de comunicação.
 
-## Integração com convênios médicos
+## 3. Integração com convênios médicos
 
 O paciente poderá informar seu plano de saúde no aplicativo. O back-end consultará a operadora para verificar:
 
@@ -53,7 +53,7 @@ Após receber a resposta, o sistema atualizará o status do agendamento. Caso a 
 
 Os dados do convênio, plano e número de autorização serão vinculados ao paciente e ao agendamento.
 
-## Tratamento de falhas
+## 4. Tratamento de falhas
 
 Para evitar problemas causados por serviços externos, serão adotadas as seguintes medidas:
 
@@ -62,7 +62,7 @@ Para evitar problemas causados por serviços externos, serão adotadas as seguin
 - **Retry:** realiza novas tentativas em intervalos progressivos (2, 4, 8 e 16 segundos), respeitando o limite de cinco tentativas.
 - **Dead Letter Queue (DLQ):** mensagens que não forem processadas serão encaminhadas para uma fila separada no Amazon SQS, permitindo análise e reprocessamento.
 
-## Consistência dos dados e prevenção de duplicidade
+## 5. Consistência dos dados e prevenção de duplicidade
 
 Para evitar cobranças, agendamentos e solicitações duplicadas, serão utilizadas três medidas:
 

@@ -1,10 +1,29 @@
 # Modelagem Lógica e Esquema Dimensional de Dados
 
+## Sumário
+
+- [1. Modelo Relacional Operacional (OLTP — PostgreSQL 16)](#1-modelo-relacional-operacional-oltp--postgresql-16)
+  - [1.1. Entidades do Banco Operacional](#11-entidades-do-banco-operacional)
+  - [1.2. Dicionário de Dados Operacional (PostgreSQL)](#12-dicionário-de-dados-operacional-postgresql)
+  - [1.3. Diagrama Entidade-Relacionamento do Banco Operacional (OLTP)](#13-diagrama-entidade-relacionamento-do-banco-operacional-oltp)
+- [2. Modelo Dimensional Analítico (OLAP — Amazon Redshift)](#2-modelo-dimensional-analítico-olap--amazon-redshift)
+  - [2.1. Processo de Negócio e Granularidade](#21-processo-de-negócio-e-granularidade)
+  - [2.2. Entidades do Esquema Estrela](#22-entidades-do-esquema-estrela)
+  - [2.3. Dicionário de Dados Dimensional (Amazon Redshift)](#23-dicionário-de-dados-dimensional-amazon-redshift)
+  - [2.4. Diagrama Entidade-Relacionamento do Data Warehouse (Star Schema)](#24-diagrama-entidade-relacionamento-do-data-warehouse-star-schema)
+- [3. Matriz de Integração e Rastreabilidade Operacional $\rightarrow$ Analítica](#3-matriz-de-integração-e-rastreabilidade-operacional-rightarrow-analítica)
+- [4. Impacto da Modelagem de Dados no Negócio](#4-impacto-da-modelagem-de-dados-no-negócio)
+  - [4.1. Confiabilidade Clínica e Integridade Transacional (OLTP em 3FN)](#41-confiabilidade-clínica-e-integridade-transacional-oltp-em-3fn)
+  - [4.2. Visibilidade Gerencial e Eficiência Operacional (OLAP Star Schema)](#42-visibilidade-gerencial-e-eficiência-operacional-olap-star-schema)
+  - [4.3. Governança LGPD e Mitigação de Passivos Legais](#43-governança-lgpd-e-mitigação-de-passivos-legais)
+
+---
+
 ## 1. Modelo Relacional Operacional (OLTP — PostgreSQL 16)
 
 O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3ª Forma Normal (3FN)** sobre o **AWS RDS PostgreSQL 16**, garantindo integridade referencial, conformidade transacional (ACID) e segregação lógica entre dados cadastrais e dados clínicos sensíveis (LGPD).
 
-### 1.1 Entidades do Banco Operacional
+### 1.1. Entidades do Banco Operacional
 
 | Entidade | Domínio | Função Operacional |
 | :--- | :--- | :--- |
@@ -21,9 +40,9 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 ---
 
-### 1.2 Dicionário de Dados Operacional (PostgreSQL)
+### 1.2. Dicionário de Dados Operacional (PostgreSQL)
 
-#### `PACIENTE`
+#### 1.2.1. `PACIENTE`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_paciente` | BIGSERIAL | PK | Identificador único do paciente |
@@ -40,7 +59,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 > **Nota LGPD:** Os dados cadastrais residem em `PACIENTE`, enquanto diagnósticos e histórico médico residem exclusivamente em `PRONTUARIO`.
 
-#### `MEDICO`
+#### 1.2.2. `MEDICO`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_medico` | BIGSERIAL | PK | Identificador único do profissional |
@@ -55,7 +74,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 > Restrição de unicidade composta: `UNIQUE (crm, uf_crm)`.
 
-#### `CONSULTA`
+#### 1.2.3. `CONSULTA`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_consulta` | BIGSERIAL | PK | Identificador único da consulta |
@@ -70,7 +89,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 | `tipo_atendimento` | VARCHAR(20) | NOT NULL, CHECK IN ('TELEMEDICINA','PRESENCIAL') | Modalidade do atendimento |
 | `data_criacao` | TIMESTAMP | NOT NULL, DEFAULT now() | Momento da marcação |
 
-#### `PRONTUARIO`
+#### 1.2.4. `PRONTUARIO`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_prontuario` | BIGSERIAL | PK | Identificador único do prontuário |
@@ -88,7 +107,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 > **Imutabilidade Clínica:** Registros de `PRONTUARIO` são imutáveis após commit. Retificações clínicas exigem registro aditivo para garantir auditoria pericial conforme Resolução CFM nº 2.314/2022.
 
-#### `PRESCRICAO_DIGITAL`
+#### 1.2.5. `PRESCRICAO_DIGITAL`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_prescricao` | BIGSERIAL | PK | Identificador do item de receita |
@@ -102,7 +121,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 | `assinatura_digital`| VARCHAR(64) | NULL | Hash SHA-256 do certificado ICP-Brasil |
 | `status` | VARCHAR(20) | NOT NULL, CHECK IN ('RASCUNHO','ASSINADA','ENTREGUE','CANCELADA') | Situação do receituário |
 
-#### `PLANO_SAUDE`
+#### 1.2.6. `PLANO_SAUDE`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_plano` | SERIAL | PK | Identificador do plano |
@@ -112,7 +131,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 | `registro_ans` | VARCHAR(20) | UNIQUE | Código de registro na ANS |
 | `ativo` | BOOLEAN | NOT NULL, DEFAULT TRUE | Status de credenciamento na Vitalis |
 
-#### `PACIENTE_PLANO`
+#### 1.2.7. `PACIENTE_PLANO`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_paciente_plano` | BIGSERIAL | PK | Identificador do vínculo paciente-convênio |
@@ -122,7 +141,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 | `data_inicio` | DATE | NOT NULL | Início da vigência |
 | `data_fim` | DATE | NULL | Fim da vigência (NULL = ativo) |
 
-#### `TRANSACAO_PAGAMENTO`
+#### 1.2.8. `TRANSACAO_PAGAMENTO`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_transacao` | BIGSERIAL | PK | Identificador da transação |
@@ -135,7 +154,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 > **Segurança de Pagamento:** Não são armazenados números de cartão de crédito no banco; armazena-se unicamente a chave de transação retornada pelo Gateway.
 
-#### `TICKET_SUPORTE_CRM`
+#### 1.2.9. `TICKET_SUPORTE_CRM`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_ticket` | BIGSERIAL | PK | Identificador do chamado |
@@ -148,7 +167,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 | `data_abertura` | TIMESTAMP | NOT NULL, DEFAULT now() | Momento de abertura |
 | `data_fechamento`| TIMESTAMP | NULL | Momento de resolução |
 
-#### `LOG_ACESSO`
+#### 1.2.10. `LOG_ACESSO`
 | Atributo | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_log` | BIGSERIAL | PK | Identificador do evento auditado |
@@ -162,7 +181,7 @@ O banco de dados operacional da **Vitalis Saúde Digital** é estruturado em **3
 
 ---
 
-### 1.3 Diagrama Entidade-Relacionamento do Banco Operacional (OLTP)
+### 1.3. Diagrama Entidade-Relacionamento do Banco Operacional (OLTP)
 
 ```mermaid
 erDiagram
@@ -250,13 +269,13 @@ erDiagram
 
 O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia de Ralph Kimball, implementado sobre o armazenamento colunar distribuído do **Amazon Redshift (Cluster RA3)**.
 
-### 2.1 Processo de Negócio e Granularidade
+### 2.1. Processo de Negócio e Granularidade
 * **Processo:** Atendimento de telemedicina e liquidação financeira de consultas.
 * **Granularidade do Fato:** Um registro por atendimento/consulta individualizada realizada ou liquidada na plataforma VitalisConnect.
 
 ---
 
-### 2.2 Entidades do Esquema Estrela
+### 2.2. Entidades do Esquema Estrela
 
 | Entidade | Tipo | Função no Data Warehouse |
 | :--- | :--- | :--- |
@@ -268,9 +287,9 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 
 ---
 
-### 2.3 Dicionário de Dados Dimensional (Amazon Redshift)
+### 2.3. Dicionário de Dados Dimensional (Amazon Redshift)
 
-#### `FATO_ATENDIMENTO_ANALITICO`
+#### 2.3.1. `FATO_ATENDIMENTO_ANALITICO`
 | Atributo | Tipo (Redshift) | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `id_fato` | BIGINT IDENTITY(1,1) | PK | Chave substituta do fato analítico |
@@ -288,7 +307,7 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 | `fl_atendimento_concluido` | SMALLINT | NOT NULL, CHECK IN (0,1) | 1 = Atendimento realizado, 0 = Cancelado/No-show |
 | `fl_retorno` | SMALLINT | NOT NULL, CHECK IN (0,1) | 1 = Retorno, 0 = Primeira consulta |
 
-#### `DIM_TEMPO`
+#### 2.3.2. `DIM_TEMPO`
 | Atributo | Tipo (Redshift) | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `sk_tempo` | INT | PK | Chave temporal no formato YYYYMMDD |
@@ -304,7 +323,7 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 | `fl_fim_de_semana`| BOOLEAN | NOT NULL | Flag de final de semana |
 | `fl_feriado` | BOOLEAN | NOT NULL | Flag de feriado nacional |
 
-#### `DIM_PACIENTE`
+#### 2.3.3. `DIM_PACIENTE`
 | Atributo | Tipo (Redshift) | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `sk_paciente` | BIGINT IDENTITY(1,1) | PK | Chave substituta do paciente |
@@ -319,7 +338,7 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 
 > **Pseudonimização LGPD:** O CPF e o nome do titular não são carregados no Data Warehouse. Utiliza-se um hash criptográfico irreversível HMAC SHA-256 gerado durante a extração via AWS Glue.
 
-#### `DIM_MEDICO`
+#### 2.3.4. `DIM_MEDICO`
 | Atributo | Tipo (Redshift) | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `sk_medico` | BIGINT IDENTITY(1,1) | PK | Chave substituta do médico |
@@ -331,7 +350,7 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 | `tempo_plataforma_meses`| INT | NOT NULL, DEFAULT 0 | Meses de credenciamento na Vitalis |
 | `status_credenciamento`| VARCHAR(20) | NOT NULL | Situação cadastral ('ATIVO', 'SUSPENSO', 'INATIVO') |
 
-#### `DIM_PLANO_SAUDE`
+#### 2.3.5. `DIM_PLANO_SAUDE`
 | Atributo | Tipo (Redshift) | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
 | `sk_plano` | INT IDENTITY(1,1) | PK | Chave substituta da fonte pagadora (-1 = particular) |
@@ -344,7 +363,7 @@ O Data Warehouse adota o **Esquema Estrela (Star Schema)** conforme metodologia 
 
 ---
 
-### 2.4 Diagrama Entidade-Relacionamento do Data Warehouse (Star Schema)
+### 2.4. Diagrama Entidade-Relacionamento do Data Warehouse (Star Schema)
 
 ```mermaid
 erDiagram
@@ -417,3 +436,42 @@ A tabela abaixo sintetiza a linhagem dos dados entre as tabelas operacionais e a
 | `PACIENTE` | `DIM_PACIENTE` | Pseudonimização irreversível via hash HMAC SHA-256 e extração de faixas etárias. |
 | `MEDICO` | `DIM_MEDICO` | Carga de atributos profissionais e cálculo de tempo ativo na plataforma. |
 | `PLANO_SAUDE` + `PACIENTE_PLANO` | `DIM_PLANO_SAUDE` | Classificação de modalidades de cobertura e canais de faturamento. |
+
+---
+
+## 4. Impacto da Modelagem de Dados no Negócio
+
+### 4.1. Confiabilidade Clínica e Integridade Transacional (OLTP em 3FN)
+
+A escolha da 3ª Forma Normal (3FN) no **AWS RDS PostgreSQL** foi orientada diretamente às exigências operacionais e regulatórias da clínica médica:
+
+* **Prevenção de Duplo Agendamento (*Overbooking*):** A confirmação de consulta, a reserva do slot de horário e a transação financeira ocorrem em transação atômica (ACID). As restrições de unicidade no PostgreSQL e travas atômicas no AWS ElastiCache for Redis (`SET NX` com expiração `EX 600`) garantem que dois pacientes nunca reservem o mesmo médico simultaneamente (na mesma fração de segundo), bloqueando a concorrência em milissegundos enquanto mantêm a trava ativa por 10 minutos (600 segundos).
+* **Segurança Jurídica e Imutabilidade do Prontuário:** O relacionamento 1:1 entre `CONSULTA` e `PRONTUARIO` é selado após a finalização do atendimento. Alterações posteriores são bloqueadas no banco; retificações clínicas exigem adendos auditáveis, protegendo o médico e a clínica em perícias ético-legais perante o Conselho Federal de Medicina (CFM).
+* **Segregação de Dados para RBAC Granular:** A separação física entre `PACIENTE` (dados cadastrais) e `PRONTUARIO` (dados clínicos) permite que perfis administrativos da recepção e faturamento acessem apenas telefones e planos, sem qualquer visibilidade sobre sintomas, hipóteses diagnósticas (CID-10) ou receitas médicas.
+
+---
+
+### 4.2. Visibilidade Gerencial e Eficiência Operacional (OLAP Star Schema)
+
+A modelagem dimensional em **Esquema Estrela** no **Amazon Redshift** transforma os dados brutos da operação em métricas acionáveis para a diretoria executiva e gestores de clínicas parceiras:
+
+| Indicador Crítico (KPI) | Fonte no Data Warehouse | Aplicação Prática no Negócio |
+| :--- | :--- | :--- |
+| **Taxa de Absenteísmo (*No-Show*)** | `FATO_ATENDIMENTO_ANALITICO.fl_atendimento_concluido` | Identificação de turnos e dias com maior índice de faltas, permitindo disparar lembretes automatizados via WhatsApp e otimizar horários de teleconsulta. |
+| **Tempo Médio de Espera e Atendimento** | `tempo_espera_min` e `duracao_atendimento_min` | Avaliação da pontualidade clínica e calibragem do tempo padrão de duração de slots por especialidade médica. |
+| **Rentabilidade por Operadora vs. Particular** | `DIM_PLANO_SAUDE.categoria_faturamento` e `valor_consulta` | Análise de margem líquida para apoiar negociações contratuais de reajuste de tabelas com planos de saúde parceiros. |
+| **Sazonalidade e Demanda Regional** | `DIM_TEMPO` e `DIM_PACIENTE.regiao_brasil` | Dimensionamento de escalas de plantonistas de telemedicina de acordo com picos epidemiológicos sazonais por macrorregião. |
+| **Volume de Prescrições Emitidas** | `qtd_prescricoes_emitidas` | Monitoramento da adesão à ferramenta de assinatura digital ICP-Brasil e controle de custos de certificação. |
+
+#### 4.2.1. Por que o Esquema Estrela traz retorno financeiro?
+Em vez de sobrecarregar o banco de produção com consultas analíticas pesadas com múltiplos *JOINs*, o Redshift processa dados desnormalizados em formato colunar. Um relatório de 3 anos de histórico é executado em menos de 2 segundos, sem demandar mais hardware e sem gerar lentidão nas telas dos médicos.
+
+---
+
+### 4.3. Governança LGPD e Mitigação de Passivos Legais
+
+A modelagem de dados foi desenhada sob o princípio de *Privacy by Design*:
+
+1. **Pseudonimização Automática no Data Warehouse:** A dimensão `DIM_PACIENTE` armazena exclusivamente o campo `id_paciente_anonimizado` (hash HMAC SHA-256). Analistas de negócios e ferramentas de BI geram relatórios estatísticos e epidemiológicos completos sem ter acesso a CPF ou nomes reais de pacientes.
+2. **Harmonização LGPD vs. Lei do Prontuário:** Em caso de pedido de exclusão formulado pelo paciente (Art. 18 da LGPD), o cadastro em `PACIENTE` é desativado (*soft delete* com `fl_ativo = false`), enquanto o registro em `PRONTUARIO` é anonimizado irreversivelmente e preservado pelo prazo compulsório de 20 anos estabelecido pelo Art. 6º da Lei nº 13.787/2018.
+3. **Auditabilidade Irrefutável (`LOG_ACESSO`):** A estrutura *append-only* (sem comandos `UPDATE` ou `DELETE`) garante que qualquer visualização ou download de prontuário fique registrado com IP, usuário e data/hora exatos, fornecendo prova técnica imediata em eventuais fiscalizações da ANPD.
