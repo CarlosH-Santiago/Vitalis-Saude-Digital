@@ -2,41 +2,41 @@
 
 A arquitetura da plataforma adota diretrizes de proteção e privacidade alinedas à LGPD (Lei nº 13.709/2018) e às exigências de segurança para dados de saúde.
 
-## Classificação dos Dados
+## 1. Classificação dos Dados
 
-Os dados armazenados no PostgreSQL, Redis, S3 e Redshift são divididos por níveis de sensibilidade para definir o grau de proteção necessário:
+Os dados armazenados no PostgreSQL, AWS ElastiCache for Redis, S3 e Redshift são divididos por níveis de sensibilidade para definir o grau de proteção necessário:
 
 | Categoria | Nível | Onde fica | Exemplos | Proteção Aplicada |
 | :--- | :--- | :--- | :--- | :--- |
 | **Público** | Baixo | PostgreSQL / S3 | Termos de uso, catálogo de serviços. | Acesso livre, integridade garantida via HTTPS. |
-| **Interno** | Médio | PostgreSQL / Redis / Redshift | Métricas, logs operacionais, cache de agenda. | Acesso restrito à equipe técnica. |
+| **Interno** | Médio | PostgreSQL / AWS ElastiCache for Redis / Redshift | Métricas, logs operacionais, cache de agenda. | Acesso restrito à equipe técnica. |
 | **Pessoal** | Alto | PostgreSQL | Nome, CPF, e-mail, CRM do médico. | Criptografia em repouso e mascaramento. |
 | **Sensível** | Máximo | PostgreSQL / S3 | Prontuários (PEP), prescrições, laudos, exames. | Criptografia forte (AES-256), acesso restrito e retenção legal de 20 anos. |
 
-## Mecanismos de Criptografia
+## 2. Mecanismos de Criptografia
 
 - **Em trânsito:** Todo o tráfego entre os clientes (web/mobile) e os servidores utiliza **HTTPS com TLS 1.3**. As chamadas de vídeo da telemedicina utilizam criptografia de ponta a ponta (E2EE) de forma efêmera na memória.
 - **Em repouso:** O banco de dados PostgreSQL e os arquivos armazenados no Amazon S3 utilizam criptografia padrão **AES-256**, garantindo que os dados fiquem ilegíveis caso haja acesso direto aos discos de armazenamento.
 
-## Gestão de Segredos
+## 3. Gestão de Segredos
 
 Para evitar vazamentos de senhas e chaves no repositório de código:
 
 - **Zero Hardcoding:** É estritamente proibido gravar senhas de banco de dados, chaves de API ou tokens diretamente no código-fonte.
 - **Variáveis de Ambiente:** Todas as credenciais sensíveis são injetadas na aplicação em tempo de execução através de **variáveis de ambiente** configuradas de forma segura no servidor, mantendo o código limpo e seguro no GitHub.
 
-## Retenção e Conformidade com a LGPD
+## 4. Retenção e Conformidade com a LGPD
 
-- **Dados temporários:** Dados de sessão e cache no Redis possuem tempo de expiração curto (TTL) e são descartados automaticamente.
+- **Dados temporários:** Dados de sessão e cache no AWS ElastiCache for Redis possuem tempo de expiração curto (TTL) e são descartados automaticamente.
 - **Prontuários e exames:** Armazenados no PostgreSQL e S3 pelo prazo obrigatório de **20 anos** (Lei nº 13.787/2018). Pedidos de exclusão pela LGPD são atendidos por **anonimização**, preservando a obrigação legal. Documentos físicos digitalizados são armazenados no S3 com criptografia, permitindo o descarte do papel após a verificação de integridade.
 - **Logs de auditoria:** Mantidos por no mínimo 6 meses conforme o Marco Civil da Internet.
 
 
-## Controle de acesso por perfil
+## 5. Controle de acesso por perfil
 
 O controle por perfil, chamado **RBAC**, limita o que cada pessoa pode fazer conforme sua função. Além do perfil, o sistema deve verificar a quem pertence o dado e se existe autorização para aquele atendimento. O que não estiver autorizado deve ser bloqueado.
 
-### Matriz de permissões
+### 5.1. Matriz de permissões
 
 Na tabela, **próprio** significa pertencente ao usuário conectado. **Vinculado** indica um paciente cujo atendimento está autorizado para o médico na mesma instituição.
 
@@ -53,7 +53,7 @@ Na tabela, **próprio** significa pertencente ao usuário conectado. **Vinculado
 | Registros de auditoria | Consultar somente com autorização específica de auditor | Sem acesso direto | Sem acesso direto | Sem acesso direto |
 | Exclusão de prontuários, prescrições e auditoria | Não permitida pelo perfil | Não permitida | Não permitida | Não permitida |
 
-### Regras de uso
+### 5.2. Regras de uso
 
 - A permissão deve ser conferida no servidor a cada acesso, inclusive em buscas e downloads. Esconder um botão não impede uma tentativa de acesso indevido.
 - Pacientes não podem acessar dados de outras pessoas. Médicos precisam de autorização para o atendimento, e uma consulta antiga não garante acesso permanente ao histórico.
@@ -64,7 +64,7 @@ Na tabela, **próprio** significa pertencente ao usuário conectado. **Vinculado
 
 O cadastro público cria apenas contas de pacientes. Médicos passam por validação profissional, e permissões administrativas dependem da aprovação de outro responsável. Os acessos devem ser revisados a cada três meses e retirados imediatamente em caso de desligamento ou mudança de função.
 
-## Autenticação
+## 6. Autenticação
 
 **Autenticação** confirma quem está entrando no sistema. **Autorização** define o que essa pessoa pode fazer depois de entrar.
 
@@ -79,7 +79,7 @@ A autenticação em dois fatores, chamada **MFA ou 2FA**, combina duas formas de
 
 Quando o segundo fator for exigido, o acesso só será liberado após sua confirmação. O código não pode ser aceito novamente depois de usado. Entrar como médico não substitui a assinatura digital necessária para emitir uma prescrição.
 
-### Proteção e recuperação da conta
+### 6.1. Proteção e recuperação da conta
 
 Como regras iniciais do projeto:
 
@@ -92,11 +92,11 @@ Se o usuário perder o celular, poderá usar um código de recuperação previam
 
 Mensagens recebidas de sistemas externos também precisam ter sua origem confirmada. Uma informação de pagamento repetida não deve gerar nova cobrança nem alterar transações de outro parceiro.
 
-## Auditoria
+## 7. Auditoria
 
 A auditoria mantém um histórico das ações no sistema. Esses registros, chamados **logs**, ajudam a identificar quem acessou um dado, quando isso aconteceu e se a operação foi permitida ou negada.
 
-### O que registrar
+### 7.1. O que registrar
 
 | Operação | Informações principais |
 | --- | --- |
@@ -114,7 +114,7 @@ A tabela `LOG_ACESSO` já descrita no projeto é a base desse histórico. Cada e
 
 **Exemplo:** um médico tenta abrir um prontuário sem autorização. O sistema bloqueia a consulta e registra o médico, o identificador do prontuário, o horário e o motivo da negativa, sem copiar o diagnóstico.
 
-### Como proteger os registros
+### 7.2. Como proteger os registros
 
 A aplicação pode acrescentar logs, mas não alterar ou apagar os anteriores. A consulta fica limitada a pessoas autorizadas para auditoria. Essa restrição no banco, sozinha, não impede alterações por um administrador do banco.
 
@@ -126,7 +126,7 @@ Se o envio para o arquivo falhar, os eventos ficam salvos em uma fila persistent
 
 
 
-### Gestão de Riscos de Segurança
+### 7.3. Gestão de Riscos de Segurança
 
 A Vitalis Saúde Digital adota medidas de segurança para proteger os dados pessoais e médicos armazenados e processados pela plataforma, reduzindo riscos de acessos indevidos, vazamentos, perdas e indisponibilidade dos serviços.
 
@@ -139,7 +139,7 @@ A Vitalis Saúde Digital adota medidas de segurança para proteger os dados pess
 | Exposição de exames e documentos         | Alto    | Armazenamento privado, controle de permissões e links temporários para downloads.                      |
 | Exposição de dados no ambiente analítico | Alto    | Minimização de dados, pseudonimização de identificadores e restrição de acesso ao Redshift.            |
 
-## Controles de segurança
+## 8. Controles de segurança
 
 Os controles devem abranger todas as etapas de tratamento das informações:
 
@@ -149,7 +149,7 @@ Os controles devem abranger todas as etapas de tratamento das informações:
 - Armazenamento: bancos de dados e arquivos médicos devem possuir acesso restrito, cópias de segurança e mecanismos de recuperação.
 - Ambiente analítico: os dados enviados ao Redshift devem ser limitados ao necessário para relatórios e indicadores, com proteção dos identificadores pessoais.
 
-## Monitoramento e validação
+## 9. Monitoramento e validação
 
 A efetividade dos controles deve ser verificada por meio de testes periódicos, incluindo:
 
@@ -162,6 +162,6 @@ A efetividade dos controles deve ser verificada por meio de testes periódicos, 
 
 Os resultados devem ser documentados, com registro das falhas identificadas e das ações corretivas necessárias.
 
-## Diretriz de segurança
+## 10. Diretriz de segurança
 
 A segurança da informação deve fazer parte da operação da Vitalis, desde o acesso aos sistemas até o armazenamento e a análise dos dados. Os controles precisam ser revisados continuamente, garantindo a confidencialidade, a integridade e a disponibilidade das informações, em conformidade com a LGPD.
